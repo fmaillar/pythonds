@@ -1342,6 +1342,42 @@ def inspect_tree(root):
     # Identifiants dupliqués entre fichiers peuvent provenir de fichiers non inclus
     return {'remaining_sphinx':sphinx,'remaining_labels':labels,'duplicate_ids':{k:v for k,v in ids.items() if v>1},'xml_errors':invalid}
 
+def restore_graphs_references(staged):
+    """Rétablir les liens perdus lors des premières corrections manuelles.
+
+    Les renvois vers des lignes sont ramenés vers leur listing, sans inventer
+    de numéro de ligne. Les ancres de ligne exactes restent à implémenter.
+    """
+    path = staged/'Advanced/GraphsRevisited.ptx'
+    text = path.read_text(encoding='utf-8')
+    operations = [
+        ('Listing\u00a0the listing below', '<xref ref="lst_simplematcher"/>'),
+        ('Listing\u00a0the corresponding listing', '<xref ref="lst_mismatchedlinks"/>'),
+        ('Line\u00a0the comparison', '<xref ref="lst_simplematcher"/>'),
+        ('line\u00a0the pattern reset', '<xref ref="lst_simplematcher"/>'),
+        ('line\u00a0the end-of-text check', '<xref ref="lst_simplematcher"/>'),
+        ('Line\u00a0the end-of-pattern check', '<xref ref="lst_simplematcher"/>'),
+        ('Line\u00a0the dictionary initialization', '<xref ref="lst_mismatchedlinks"/>'),
+    ]
+    for old, new in operations:
+        if text.count(old) != 1:
+            raise RuntimeError(f'Restauration ambiguë ({old!r}): {text.count(old)} occurrence(s)')
+        text = text.replace(old, new, 1)
+    for name, signature in [
+        ('lst_simplematcher', 'def simple_matcher(pattern, text):'),
+        ('lst_mismatchedlinks', 'def mismatched_links(pattern):'),
+    ]:
+        found = list(re.finditer(r'<pre>(.*?)</pre>', text, flags=re.DOTALL))
+        blocks = [(m, m.group(1)) for m in found if signature in m.group(1)]
+        if len(blocks) != 1:
+            raise RuntimeError(f'Listing {name} non identifié sans ambiguïté')
+        match, code = blocks[0]
+        listing = f'<listing xml:id="{name}"><program language="python" label="{name}"><input>{code}</input></program></listing>'
+        text = text[:match.start()] + listing + text[match.end():]
+    ET.fromstring(text)
+    path.write_text(text, encoding='utf-8')
+    return len(operations)
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
@@ -1419,6 +1455,7 @@ def main():
         got={str(p.relative_to(staged)):sha(p.read_bytes()) for p in staged.rglob('*.ptx')}
         bad={k:(data['source_hashes'][k],got.get(k)) for k in expected if data['source_hashes'][k]!=got.get(k)}
         if bad: raise RuntimeError('La base Git diffère du contenu validé : '+repr(dict(list(bad.items())[:12])))
+        restored_graphs=restore_graphs_references(staged)
         problems=inspect_tree(staged)
         if problems['xml_errors']: raise RuntimeError('XML invalide : '+repr(problems['xml_errors']))
         # Sauvegarde et remplacement atomique du dossier RM2 (jamais pretext/).
@@ -1442,6 +1479,7 @@ def main():
         project_file.write_bytes(new_project)
     report={'datetime':stamp,'git_revision':revision,'overlay_files':sorted(data['overlays']),
             'asset_files':sorted(data['assets']),**problems}
+    print('Références cliquables restaurées (Graphes) :',restored_graphs)
     print('Réédition reproduite. Références Sphinx résiduelles :',len(problems['remaining_sphinx']))
     print('Marqueurs de code résiduels :',len(problems['remaining_labels']))
     if args.build:
