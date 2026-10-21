@@ -1595,6 +1595,29 @@ def attach_quantization_figures(staged):
     return len(specs)
 
 
+def update_quantization_caption_text(staged):
+    """Adapte la description des figures synthétiques au contenu réel."""
+    path=staged/'Advanced/TreesRevisited.ptx'
+    original=path.read_text(encoding='utf-8')
+    begin=' shows a before and\n                after comparison of original and quantized images.'
+    end='to two shades of tan.'
+    i=original.find(begin)
+    j=original.find(end,i)
+    if i<0 or j<0 or original.find(begin,i+1)>=0:
+        raise RuntimeError('Paragraphe de quantification simple introuvable ou ambigu')
+    new=(' shows the original synthetic scene on the left and the result of '
+         'simple color quantization on the right. The sky, house, tree, and '
+         'textured ground make it possible to compare changes in color levels '
+         'and fine detail. This illustrative scene was generated for the RM2 '
+         'edition; it replaces the unavailable historical photograph. '
+         'To experiment with a real photograph, you can run the '
+         '<c>simple_quant</c> program on a JPEG image of your choice.')
+    revised=original[:i]+new+original[j+len(end):]
+    ET.fromstring(revised)
+    path.write_text(revised,encoding='utf-8')
+    return 1
+
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
@@ -1677,6 +1700,7 @@ def main():
         repaired_code_refs=repair_remaining_code_references(staged)
         restored_commented_refs=restore_commented_code_references(staged)
         restored_figures=attach_quantization_figures(staged)
+        updated_descriptions=update_quantization_caption_text(staged)
         problems=inspect_tree(staged)
         if problems['xml_errors']: raise RuntimeError('XML invalide : '+repr(problems['xml_errors']))
         # Sauvegarde et remplacement atomique du dossier RM2 (jamais pretext/).
@@ -1705,6 +1729,7 @@ def main():
     print('Ancres de code converties en liens vers les listings :',repaired_code_refs)
     print('Anciens liens masqués restaurés :',restored_commented_refs)
     print('Figures comparatives et renvois PreTeXt restaurés :',restored_figures,'; couleurs octree :',octree_colors)
+    print('Descriptions des figures adaptées :',updated_descriptions)
     print('Réédition reproduite. Références Sphinx résiduelles :',len(problems['remaining_sphinx']))
     print('Marqueurs de code résiduels :',len(problems['remaining_labels']))
     if args.build:
