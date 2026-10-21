@@ -1626,7 +1626,7 @@ def install_table_spacing_xsl(project):
   <xsl:import href="./core/pretext-latex.xsl"/>
   <xsl:param name="latex.preamble.late">
     <xsl:text>&#10;% RM2 table padding&#10;</xsl:text>
-    <xsl:text>\\setlength{\\tabcolsep}{2pt}&#10;</xsl:text>
+    <xsl:text>\setlength{\tabcolsep}{2pt}&#10;</xsl:text>
   </xsl:param>
 </xsl:stylesheet>
 '''
