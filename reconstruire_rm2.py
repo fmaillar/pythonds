@@ -1452,6 +1452,291 @@ def restore_commented_code_references(staged):
         path.write_text(content,encoding='utf-8')
     return total
 
+
+def generate_quantization_comparisons(project):
+    """Deux figures originales et reproductibles, sans image ni paquet externe.
+
+    Scène synthétique : ce ne sont PAS les figures historiques « bubbles.jpg ».
+    Quantification simple conforme à simple_quant et partition octree adaptative
+    à au plus 256 couleurs. PNG encodés avec la bibliothèque standard.
+    """
+    import math
+    import heapq
+    import struct
+    import zlib
+
+    w,h=216,144
+    pixels=[]
+    def clamp(x):
+        return max(0,min(255,int(x)))
+    for y in range(h):
+        for x in range(w):
+            t=y/h
+            n=((x*37+y*73+(x*y)%97)*2654435761)&0xffffffff
+            noise=((n>>16)&255)-128
+            if y < 67+int(6*math.sin(x/25)):
+                c=(32+73*t,119+81*t,184+55*t)
+                d=noise*.11
+            else:
+                c=(48+32*t,105+27*(1-t),39+9*t)
+                d=noise*.60
+            # Maison et toit colorés, pour visualiser les contours.
+            if 53 < x < 113 and 48 < y < 109:
+                c=(172,117,78);d=noise*.20
+            if 44 < x < 123 and 33 < y < 58 and y > 34+abs(x-83)*.52:
+                c=(145,49,43);d=noise*.12
+            if 79 < x < 92 and 77 < y < 109:
+                c=(61,57,47);d=0
+            # Arbre : feuillage texturé et tronc.
+            if 163 < x < 174 and 58 < y < 120:
+                c=(97,63,37);d=noise*.2
+            if ((x-168)/34)**2+((y-54)/37)**2 < 1:
+                c=(29+19*t,102+37*t,40);d=noise*.42
+            pixels.append(tuple(clamp(v+d) for v in c))
+    simple=[(r//36*36,g//42*42,b//42*42) for r,g,b in pixels]
+
+    # Subdivision octree adaptative ; chaque nœud terminal est une couleur.
+    # Les divisions suivent les trois bits de même rang des composantes RVB.
+    groups={(0,0):list(range(len(pixels)))}
+    serial=0
+    queue=[]
+    def score(indices,depth):
+        if depth>=8 or len(indices)<=1:
+            return 0.0
+        m=len(indices)
+        sums=[sum(pixels[i][c] for i in indices)/m for c in range(3)]
+        variance=sum(sum((pixels[i][c]-sums[c])**2 for i in indices) for c in range(3))
+        return variance
+    heapq.heappush(queue,(-score(groups[(0,0)],0),0,0))
+    while queue and len(groups)<256:
+        negative,depth,ident=heapq.heappop(queue)
+        key=(depth,ident)
+        indices=groups.get(key)
+        if indices is None or negative>=0 or depth==8: continue
+        bit=7-depth
+        children={}
+        for i in indices:
+            r,g,b=pixels[i]
+            octant=(((r>>bit)&1)<<2)|(((g>>bit)&1)<<1)|((b>>bit)&1)
+            children.setdefault(octant,[]).append(i)
+        # Ne jamais dépasser le plafond de 256 couleurs.
+        if len(groups)-1+len(children)>256: continue
+        del groups[key]
+        for octant,ix in sorted(children.items()):
+            child=(depth+1,ident*8+octant)
+            groups[child]=ix
+            heapq.heappush(queue,(-score(ix,depth+1),child[0],child[1]))
+    octree=[None]*len(pixels)
+    for ix in groups.values():
+        col=tuple(round(sum(pixels[i][c] for i in ix)/len(ix)) for c in range(3))
+        for i in ix: octree[i]=col
+    assert all(x is not None for x in octree) and len(groups)<=256
+
+    def make_png(original,quantized):
+        gap=8; outw=2*w+gap
+        raw=bytearray()
+        for y in range(h):
+            raw.append(0)
+            for rgb in original[y*w:(y+1)*w]:
+                raw.extend(rgb)
+            raw.extend(b'\xff'*(gap*3))
+            for rgb in quantized[y*w:(y+1)*w]:
+                raw.extend(rgb)
+        def chunk(tag,data):
+            return struct.pack('!I',len(data))+tag+data+struct.pack('!I',zlib.crc32(tag+data)&0xffffffff)
+        return (b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!2I5B',outw,h,8,2,0,0,0))
+                +chunk(b'IDAT',zlib.compress(bytes(raw),9))+chunk(b'IEND',b''))
+    dest=project/'assets/rm2'
+    dest.mkdir(parents=True,exist_ok=True)
+    (dest/'simple-quantization-comparison.png').write_bytes(make_png(pixels,simple))
+    (dest/'octree-quantization-comparison.png').write_bytes(make_png(pixels,octree))
+    return len(groups)
+
+
+def attach_quantization_figures(staged):
+    """Rétablit les deux figures PreTeXt et leurs références cliquables."""
+    from lxml import etree
+    path=staged/'Advanced/TreesRevisited.ptx'
+    tree=etree.parse(str(path))
+    specs=[
+        ('#fig_simplecompare','fig-simplecompare',
+         'Simple color quantization: original (left) and quantized image (right); reproducible synthetic example',
+         'rm2/simple-quantization-comparison.png'),
+        ('#fig_otquantcompare','fig-otquantcompare',
+         'Octree quantization: original (left) and quantized image (right); reproducible synthetic example',
+         'rm2/octree-quantization-comparison.png'),
+    ]
+    for oldref,newid,caption,source in specs:
+        urls=tree.xpath("//*[local-name()='url' and @href=$ref]",ref=oldref)
+        if len(urls)!=1: raise RuntimeError(f'Figure à rétablir : {oldref}: {len(urls)} renvois')
+        link=urls[0];parent=link.getparent()
+        # Le mot « Figure » existe déjà juste avant <url>.
+        index=parent.index(link)
+        owner=parent if index==0 else parent[index-1]
+        attr='text' if index==0 else 'tail'
+        before=getattr(owner,attr) or ''
+        before2,n=re.subn(r'Figure(?:\s|\u00a0)+
+    tree=ET.parse(path); root=tree.getroot()
+    targets=root.find('targets')
+    if targets is None: raise RuntimeError('project.ptx sans <targets>')
+    for name,fmt in [('rm2','pdf'),('rm2-latex','latex')]:
+        t=next((x for x in targets.findall('target') if x.get('name')==name),None)
+        if t is None: t=ET.SubElement(targets,'target',{'name':name})
+        t.attrib.update({'format':fmt,'source':'../pretext-rm2/main.ptx','publication':'publication-rm2.ptx'})
+    ET.indent(tree, space='  ')
+    return ET.tostring(root,encoding='utf-8',xml_declaration=True)
+
+def main():
+    ap=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--project',type=Path,required=True,help='Répertoire cible (créé par git clone si absent)')
+    ap.add_argument('--repo',default='https://github.com/RunestoneInteractive/pythonds.git',help='URL Git source')
+    ap.add_argument('--dry-run',action='store_true',help='Aucune écriture ni compilation')
+    ap.add_argument('--build',action='store_true',default=True,help='Compiler (activé par défaut)')
+    ap.add_argument('--no-build',dest='build',action='store_false',help='Ne pas compiler')
+    ap.add_argument('--archive',action='store_true',default=True,help='Archiver (activé par défaut)')
+    ap.add_argument('--no-archive',dest='archive',action='store_false',help='Ne pas archiver')
+    ap.add_argument('--revision',help='Exiger ce SHA de commit Git pour figer le point de départ')
+    args=ap.parse_args(); project=args.project.expanduser().resolve()
+    if not project.exists():
+        if args.dry_run:
+            print(f'[simulation] git clone {args.repo} {project}')
+            return 0
+        project.parent.mkdir(parents=True, exist_ok=True)
+        print('Clonage des sources originales :', args.repo, flush=True)
+        subprocess.run(['git', 'clone', args.repo, str(project)], check=True)
+    elif not (project/'.git').exists():
+        ap.error(f'Le chemin existe mais n’est pas un dépôt Git : {project}')
+    if not (project/'pretext/main.ptx').is_file() or not (project/'project.ptx').is_file():
+        ap.error('Projet PreTeXt introuvable dans le clone')
+    if args.revision:
+        # La révision est choisie avant l’export. Aucune modification de pretext/.
+        if not args.dry_run:
+            if cmd('git','status','--porcelain','--untracked-files=no',cwd=project):
+                ap.error('Dépôt modifié : impossible de changer de révision sans risque')
+            subprocess.run(['git','fetch','origin',args.revision],cwd=project,check=True)
+            subprocess.run(['git','checkout','--detach',args.revision],cwd=project,check=True)
+        else:
+            print('[simulation] checkout de la révision :',args.revision)
+    revision=cmd('git','rev-parse','HEAD',cwd=project)
+    if args.revision and not revision.startswith(args.revision):
+        ap.error(f'Révision incompatible : {revision} != {args.revision}')
+    data=json.loads(unpack(PAYLOAD))
+    stamp=datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    print('Révision Git :',revision)
+    print('Fichiers de contenu modifiés embarqués :',len(data['overlays']))
+    print('Ressources RM2 embarquées :',len(data['assets']))
+    if args.dry_run:
+        print('Simulation seulement ; aucune modification.')
+        return 0
+
+    report_dir=project/'audit-rm2'/f'reproduction-{stamp}'
+    report_dir.mkdir(parents=True,exist_ok=False)
+    # Extraire les fichiers de la révision Git plutôt que recopier les changements locaux.
+    with tempfile.TemporaryDirectory(prefix='rm2-base-') as d:
+        base=Path(d)
+        with (base/'pretext.tar').open('wb') as f:
+            p=subprocess.run(['git','archive','--format=tar','HEAD','pretext'],cwd=project,stdout=f,stderr=subprocess.PIPE)
+        if p.returncode: raise RuntimeError('git archive a échoué : '+p.stderr.decode(errors='replace'))
+        with tarfile.open(base/'pretext.tar') as t:
+            t.extractall(base,filter='data')
+        src=base/'pretext'
+        expected=set(data['rm2_inventory'])
+        found={str(p.relative_to(src)) for p in src.rglob('*.ptx')}
+        if not expected <= found:
+            raise RuntimeError('Fichiers originaux absents du commit : '+repr(sorted(expected-found)[:12]))
+        # Le reste est copié depuis le commit Git : fichiers strictement tracés.
+        staged=base/'pretext-rm2'
+        shutil.copytree(src,staged)
+        for rel,blob in data['overlays'].items():
+            p=staged/rel; p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(unpack(blob))
+        got={str(p.relative_to(staged)):sha(p.read_bytes()) for p in staged.rglob('*.ptx')}
+        bad={k:(data['source_hashes'][k],got.get(k)) for k in expected if data['source_hashes'][k]!=got.get(k)}
+        if bad: raise RuntimeError('La base Git diffère du contenu validé : '+repr(dict(list(bad.items())[:12])))
+        restored_graphs=restore_graphs_references(staged)
+        repaired_code_refs=repair_remaining_code_references(staged)
+        restored_commented_refs=restore_commented_code_references(staged)
+        restored_figures=attach_quantization_figures(staged)
+        problems=inspect_tree(staged)
+        if problems['xml_errors']: raise RuntimeError('XML invalide : '+repr(problems['xml_errors']))
+        # Sauvegarde et remplacement atomique du dossier RM2 (jamais pretext/).
+        dest=project/'pretext-rm2'
+        if dest.exists():
+            backup=report_dir/'pretext-rm2-before'
+            shutil.copytree(dest,backup)
+            shutil.rmtree(dest)
+        shutil.copytree(staged,dest)
+    # Assets et publication : ne remplacer que les éléments spécifiques à RM2.
+    for rel,blob in data['assets'].items():
+        path=project/rel;path.parent.mkdir(parents=True,exist_ok=True)
+        if path.exists() and sha(path.read_bytes()) != data['asset_hashes'][rel]:
+            bak=report_dir/'previous-assets'/rel;bak.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(path,bak)
+        path.write_bytes(unpack(blob))
+    octree_colors=generate_quantization_comparisons(project)
+    project_file=project/'project.ptx'
+    new_project=configure_project(project_file)
+    if project_file.read_bytes()!=new_project:
+        shutil.copy2(project_file,report_dir/'project-before.ptx')
+        project_file.write_bytes(new_project)
+    report={'datetime':stamp,'git_revision':revision,'overlay_files':sorted(data['overlays']),
+            'asset_files':sorted(data['assets']),**problems}
+    print('Références cliquables restaurées (Graphes) :',restored_graphs)
+    print('Ancres de code converties en liens vers les listings :',repaired_code_refs)
+    print('Anciens liens masqués restaurés :',restored_commented_refs)
+    print('Figures comparatives et renvois PreTeXt restaurés :',restored_figures,'; couleurs octree :',octree_colors)
+    print('Réédition reproduite. Références Sphinx résiduelles :',len(problems['remaining_sphinx']))
+    print('Marqueurs de code résiduels :',len(problems['remaining_labels']))
+    if args.build:
+        log=report_dir/'build.log'
+        with log.open('w') as f:
+            p=subprocess.run(['uvx','--from','pretext','pretext','build','rm2'],cwd=project,stdout=f,stderr=subprocess.STDOUT)
+        content=log.read_text(errors='replace');last=content.rsplit('This is XeTeX, Version',1)[-1]
+        widths=[float(v) for v in re.findall(r'Overfull \\hbox \(([\d.]+)pt too wide\)',last)]
+        report['build']={'returncode':p.returncode,'horizontal':len(widths),'max_pt':max(widths,default=0),
+                         'vertical':last.count(r'Overfull \vbox'),
+                         'pages':re.findall(r'Output written on main\.pdf \((\d+) pages?',last)}
+        print('PDF :',report['build'])
+    if args.archive:
+        dest=report_dir/f'pythonds-rm2-sources-{stamp}.tar.gz'
+        with tarfile.open(dest,'w:gz') as t:
+            for rel in ['pretext-rm2','project.ptx','publication/publication-rm2.ptx','assets/rm2']:
+                t.add(project/rel,arcname=rel)
+        print('Archive :',dest)
+    (report_dir/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+    md=[f'# Reproduction RM2 — {stamp}', '', f'Révision Git : `{revision}`',
+        f'Fichiers modifiés par rapport au dépôt : {len(data["overlays"])}',
+        f'Références Sphinx résiduelles : {len(problems["remaining_sphinx"])}',
+        f'Marqueurs résiduels : {len(problems["remaining_labels"])}',
+        f'Identifiants dupliqués dans les .ptx : {len(problems["duplicate_ids"])}','']
+    if 'build' in report: md += ['## Compilation', '```json',json.dumps(report['build'],indent=2),'```','']
+    md += ['## Références à examiner',*['- '+x['file']+': '+x['href'] for x in problems['remaining_sphinx']]]
+    (report_dir/'report.md').write_text('\n'.join(md)+'\n')
+    print('Rapport :',report_dir/'report.md')
+    if 'build' in report and (report['build']['returncode']!=0 or report['build']['vertical']):return 2
+    return 0
+
+if __name__=='__main__':
+    try:sys.exit(main())
+    except Exception as e: print('ÉCHEC :',e,file=sys.stderr);sys.exit(1), '',before,count=1)
+        if n!=1: raise RuntimeError('Préfixe Figure introuvable pour '+oldref)
+        setattr(owner,attr,before2)
+        xref=etree.Element('xref',ref=newid);xref.tail=link.tail
+        parent.replace(link,xref)
+        # La figure est insérée après le paragraphe qui la cite.
+        para=parent
+        while para is not None and etree.QName(para).localname!='p':
+            para=para.getparent()
+        if para is None: raise RuntimeError('Paragraphe cible introuvable')
+        figure=etree.Element('figure')
+        figure.set('{http://www.w3.org/XML/1998/namespace}id',newid)
+        etree.SubElement(figure,'caption').text=caption
+        etree.SubElement(figure,'image',source=source,width='95%')
+        holder=para.getparent()
+        holder.insert(holder.index(para)+1,figure)
+    tree.write(str(path),encoding='utf-8')
+    return len(specs)
+
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
