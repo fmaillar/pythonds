@@ -1620,7 +1620,7 @@ def update_quantization_caption_text(staged):
 
 def install_table_spacing_xsl(project):
     """Style PDF RM2 : réduire l'espacement des colonnes."""
-    xsl = '''<?xml version="1.0" encoding="UTF-8"?>
+    xsl = r'''<?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
     xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
   <xsl:import href="./core/pretext-latex.xsl"/>
