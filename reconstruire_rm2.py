@@ -1618,6 +1618,25 @@ def update_quantization_caption_text(staged):
     return 1
 
 
+def install_table_spacing_xsl(project):
+    """Style PDF RM2 : réduire l'espacement des colonnes."""
+    xsl = '''<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet version="1.0"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <xsl:import href="./core/pretext-latex.xsl"/>
+  <xsl:param name="latex.preamble.late">
+    <xsl:text>&#10;% RM2 table padding&#10;</xsl:text>
+    <xsl:text>\\setlength{\\tabcolsep}{2pt}&#10;</xsl:text>
+  </xsl:param>
+</xsl:stylesheet>
+'''
+    ET.fromstring(xsl)
+    path=project/'xsl/rm2-tables.xsl'
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(xsl,encoding='utf-8')
+    return path
+
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
@@ -1626,6 +1645,9 @@ def configure_project(path):
         t=next((x for x in targets.findall('target') if x.get('name')==name),None)
         if t is None: t=ET.SubElement(targets,'target',{'name':name})
         t.attrib.update({'format':fmt,'source':'../pretext-rm2/main.ptx','publication':'publication-rm2.ptx'})
+        custom=t.find('xsl')
+        if custom is None: custom=ET.SubElement(t,'xsl')
+        custom.text='xsl/rm2-tables.xsl'
     ET.indent(tree, space='  ')
     return ET.tostring(root,encoding='utf-8',xml_declaration=True)
 
@@ -1718,6 +1740,7 @@ def main():
             shutil.copy2(path,bak)
         path.write_bytes(unpack(blob))
     octree_colors=generate_quantization_comparisons(project)
+    install_table_spacing_xsl(project)
     project_file=project/'project.ptx'
     new_project=configure_project(project_file)
     if project_file.read_bytes()!=new_project:
@@ -1745,7 +1768,7 @@ def main():
     if args.archive:
         dest=report_dir/f'pythonds-rm2-sources-{stamp}.tar.gz'
         with tarfile.open(dest,'w:gz') as t:
-            for rel in ['pretext-rm2','project.ptx','publication/publication-rm2.ptx','assets/rm2']:
+            for rel in ['pretext-rm2','project.ptx','publication/publication-rm2.ptx','assets/rm2','xsl/rm2-tables.xsl']:
                 t.add(project/rel,arcname=rel)
         print('Archive :',dest)
     (report_dir/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
