@@ -1378,6 +1378,47 @@ def restore_graphs_references(staged):
     path.write_text(text, encoding='utf-8')
     return len(operations)
 
+def repair_remaining_code_references(staged):
+    """Convertit huit ancres Sphinx vers les listings PreTeXt existants.
+
+    Le lien mène au listing entier lorsque l'ancre de ligne Sphinx n'existe
+    plus ; ne prétend pas fournir un renvoi à une ligne exacte.
+    """
+    from lxml import etree
+    mappings = {
+        'Advanced/DictionariesRevisited.ptx': {
+            '#check1:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#down1:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#check2:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#found:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#check3:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#down2:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#next1:lst_skiplistsearchcode': 'lst_skiplistsearchcode',
+            '#init:lst_mapclass': 'lst_mapclass',
+        }
+    }
+    count=0
+    for rel, mapping in mappings.items():
+        path=staged/rel
+        tree=etree.parse(str(path))
+        ids={e.get('{http://www.w3.org/XML/1998/namespace}id') for e in tree.iter()}
+        if not set(mapping.values()) <= ids:
+            raise RuntimeError('Listing cible absent dans '+rel)
+        seen=set()
+        for old in list(tree.xpath("//*[local-name()='url']")):
+            href=old.get('href')
+            if href not in mapping: continue
+            if href in seen: raise RuntimeError('Ancre multiple : '+href)
+            seen.add(href)
+            new=etree.Element('xref',ref=mapping[href])
+            new.tail=old.tail
+            old.getparent().replace(old,new)
+            count+=1
+        if seen != set(mapping):
+            raise RuntimeError('Ancres introuvables : '+repr(set(mapping)-seen))
+        tree.write(str(path),encoding='utf-8')
+    return count
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
@@ -1456,6 +1497,7 @@ def main():
         bad={k:(data['source_hashes'][k],got.get(k)) for k in expected if data['source_hashes'][k]!=got.get(k)}
         if bad: raise RuntimeError('La base Git diffère du contenu validé : '+repr(dict(list(bad.items())[:12])))
         restored_graphs=restore_graphs_references(staged)
+        repaired_code_refs=repair_remaining_code_references(staged)
         problems=inspect_tree(staged)
         if problems['xml_errors']: raise RuntimeError('XML invalide : '+repr(problems['xml_errors']))
         # Sauvegarde et remplacement atomique du dossier RM2 (jamais pretext/).
@@ -1480,6 +1522,7 @@ def main():
     report={'datetime':stamp,'git_revision':revision,'overlay_files':sorted(data['overlays']),
             'asset_files':sorted(data['assets']),**problems}
     print('Références cliquables restaurées (Graphes) :',restored_graphs)
+    print('Ancres de code converties en liens vers les listings :',repaired_code_refs)
     print('Réédition reproduite. Références Sphinx résiduelles :',len(problems['remaining_sphinx']))
     print('Marqueurs de code résiduels :',len(problems['remaining_labels']))
     if args.build:
