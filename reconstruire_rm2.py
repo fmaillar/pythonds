@@ -1645,9 +1645,11 @@ def configure_project(path):
         t=next((x for x in targets.findall('target') if x.get('name')==name),None)
         if t is None: t=ET.SubElement(targets,'target',{'name':name})
         t.attrib.update({'format':fmt,'source':'../pretext-rm2/main.ptx','publication':'publication-rm2.ptx'})
-        custom=t.find('xsl')
-        if custom is None: custom=ET.SubElement(t,'xsl')
-        custom.text='xsl/rm2-tables.xsl'
+        # PreTeXt 2.56 attend @xsl, relatif au dossier xsl/ du projet.
+        # Supprimer les anciens éléments <xsl> mal formés créés auparavant.
+        for obsolete in list(t.findall('xsl')):
+            t.remove(obsolete)
+        t.set('xsl','rm2-tables.xsl')
     ET.indent(tree, space='  ')
     return ET.tostring(root,encoding='utf-8',xml_declaration=True)
 
