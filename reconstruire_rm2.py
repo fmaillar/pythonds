@@ -1637,6 +1637,29 @@ def install_table_spacing_xsl(project):
     return path
 
 
+def configure_letter_publication(path):
+    """US Letter avec en-tête intégré dans la géométrie de page."""
+    tree=ET.parse(path)
+    root=tree.getroot()
+    latex=root.find('latex')
+    if latex is None:
+        raise RuntimeError('Élément <latex> absent de la publication RM2')
+    page=latex.find('page')
+    if page is None:
+        page=ET.SubElement(latex,'page')
+    geometry=page.find('geometry')
+    if geometry is None:
+        geometry=ET.SubElement(page,'geometry')
+    geometry.text=('paperwidth=8.5in,paperheight=11in,'
+                   'left=16mm,right=16mm,top=22mm,bottom=20mm,'
+                   'includehead,headheight=14pt,headsep=6mm,footskip=10mm')
+    ET.indent(tree,space='  ')
+    content=ET.tostring(root,encoding='utf-8',xml_declaration=True)
+    ET.fromstring(content)
+    path.write_bytes(content)
+    return geometry.text
+
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
@@ -1741,6 +1764,7 @@ def main():
             bak=report_dir/'previous-assets'/rel;bak.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(path,bak)
         path.write_bytes(unpack(blob))
+    letter_geometry=configure_letter_publication(project/'publication/publication-rm2.ptx')
     octree_colors=generate_quantization_comparisons(project)
     install_table_spacing_xsl(project)
     project_file=project/'project.ptx'
@@ -1750,6 +1774,7 @@ def main():
         project_file.write_bytes(new_project)
     report={'datetime':stamp,'git_revision':revision,'overlay_files':sorted(data['overlays']),
             'asset_files':sorted(data['assets']),**problems}
+    print('Géométrie US Letter :',letter_geometry)
     print('Références cliquables restaurées (Graphes) :',restored_graphs)
     print('Ancres de code converties en liens vers les listings :',repaired_code_refs)
     print('Anciens liens masqués restaurés :',restored_commented_refs)
