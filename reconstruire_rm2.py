@@ -1627,9 +1627,6 @@ def install_table_spacing_xsl(project):
   <xsl:param name="latex.preamble.late">
     <xsl:text>&#10;% RM2 table padding&#10;</xsl:text>
     <xsl:text>\\setlength{\\tabcolsep}{2pt}&#10;</xsl:text>
-    <xsl:text>% RM2: two long titles get visual line breaks only&#10;</xsl:text>
-    <xsl:text>\titleformat{\section}[hang]{\divisionfont\Large\bfseries}{\thesection\ptxappendixperiodsection}{1ex}{\ifstrequal{#1}{Why Study Data Structures and Abstract Data Types?}{\shortstack[l]{Why Study Data Structures\\and Abstract Data Types?}}{#1}}[{\large\authorsptx}]&#10;</xsl:text>
-    <xsl:text>\titleformat{\chapter}[display]{\divisionfont\huge\bfseries}{\divisionnameptx\space\thechapter}{20pt}{\Huge\ifstrequal{#1}{Graphs and Graphing Algorithms}{\shortstack[l]{Graphs and\\Graphing Algorithms}}{#1}}[{\Large\authorsptx}]&#10;</xsl:text>
   </xsl:param>
 </xsl:stylesheet>
 '''
