@@ -1575,7 +1575,27 @@ def attach_quantization_figures(staged):
         owner=parent if index==0 else parent[index-1]
         attr='text' if index==0 else 'tail'
         before=getattr(owner,attr) or ''
-        before2,n=re.subn(r'Figure(?:\s|\u00a0)+
+        before2,n=re.subn(r'Figure(?:\s|\u00a0)+$', '', before, count=1)
+        if n!=1: raise RuntimeError('Préfixe Figure introuvable pour '+oldref)
+        setattr(owner,attr,before2)
+        xref=etree.Element('xref',ref=newid)
+        xref.tail=link.tail
+        parent.replace(link,xref)
+        para=parent
+        while para is not None and etree.QName(para).localname!='p':
+            para=para.getparent()
+        if para is None: raise RuntimeError('Paragraphe cible introuvable')
+        figure=etree.Element('figure')
+        figure.set('{http://www.w3.org/XML/1998/namespace}id',newid)
+        etree.SubElement(figure,'caption').text=caption
+        etree.SubElement(figure,'image',source=source,width='95%')
+        holder=para.getparent()
+        holder.insert(holder.index(para)+1,figure)
+    tree.write(str(path),encoding='utf-8')
+    return len(specs)
+
+
+def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
     if targets is None: raise RuntimeError('project.ptx sans <targets>')
@@ -1585,6 +1605,7 @@ def attach_quantization_figures(staged):
         t.attrib.update({'format':fmt,'source':'../pretext-rm2/main.ptx','publication':'publication-rm2.ptx'})
     ET.indent(tree, space='  ')
     return ET.tostring(root,encoding='utf-8',xml_declaration=True)
+
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
