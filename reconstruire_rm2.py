@@ -1419,6 +1419,39 @@ def repair_remaining_code_references(staged):
         tree.write(str(path),encoding='utf-8')
     return count
 
+def restore_commented_code_references(staged):
+    """Restaure quatre liens Sphinx qui avaient été commentés.
+
+    Ancre de repli sur le listing complet, non sur la ligne individuelle.
+    """
+    changes = {
+        'Advanced/PythonListsRevisited.ptx': [
+            ('line\u00a0 <!-- <url href="#line:lst_arr_size" visual="#line:lst_arr_size">[line:lst_arr_size]</url> -->',
+             'the relevant condition in <xref ref="lst_arraylistinit"/>'),
+            ('line\u00a0 <!--<url href="#line:lst_arr_cop1" visual="#line:lst_arr_cop1">[line:lst_arr_cop1]</url>. -->',
+             'the copying loop in <xref ref="lst_arraylistinit"/>.'),
+            ('line\u00a0<!-- <url href="#line:lst_arrlistins_range" visual="#line:lst_arrlistins_range">[line:lst_arrlistins_range]</url> -->',
+             'the relevant statement in <xref ref="lst_arrlistins"/>'),
+        ],
+        'Advanced/RecursionRevisited.ptx': [
+            ('line <!-- <url href="#line:gcd3_return" visual="#line:gcd3_return">[line:gcd3_return]</url> -->',
+             'the return statement in <xref ref="lst_gcd3"/>'),
+        ],
+    }
+    total=0
+    for rel,repls in changes.items():
+        path=staged/rel
+        content=path.read_text(encoding='utf-8')
+        for old,new in repls:
+            matches=content.count(old)
+            if matches!=1:
+                raise RuntimeError(f'Renvoi absent ou ambigu {rel}: {old!r} ({matches})')
+            content=content.replace(old,new,1)
+            total+=1
+        ET.fromstring(content)
+        path.write_text(content,encoding='utf-8')
+    return total
+
 def configure_project(path):
     tree=ET.parse(path); root=tree.getroot()
     targets=root.find('targets')
@@ -1498,6 +1531,7 @@ def main():
         if bad: raise RuntimeError('La base Git diffère du contenu validé : '+repr(dict(list(bad.items())[:12])))
         restored_graphs=restore_graphs_references(staged)
         repaired_code_refs=repair_remaining_code_references(staged)
+        restored_commented_refs=restore_commented_code_references(staged)
         problems=inspect_tree(staged)
         if problems['xml_errors']: raise RuntimeError('XML invalide : '+repr(problems['xml_errors']))
         # Sauvegarde et remplacement atomique du dossier RM2 (jamais pretext/).
@@ -1523,6 +1557,7 @@ def main():
             'asset_files':sorted(data['assets']),**problems}
     print('Références cliquables restaurées (Graphes) :',restored_graphs)
     print('Ancres de code converties en liens vers les listings :',repaired_code_refs)
+    print('Anciens liens masqués restaurés :',restored_commented_refs)
     print('Réédition reproduite. Références Sphinx résiduelles :',len(problems['remaining_sphinx']))
     print('Marqueurs de code résiduels :',len(problems['remaining_labels']))
     if args.build:
