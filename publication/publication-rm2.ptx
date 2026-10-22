@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<publication>
+  <source>
+    <directories external="../assets" generated="../generated-assets" />
+  </source>
+  <html>
+    <platform host="web" />
+    <knowl exercise-inline="no" example="no" listing="no" />
+    <css theme="salem" />
+  </html>
+  <latex print="no" sides="one" font-size="10">
+    <page>
+      <geometry>paperwidth=8.5in,paperheight=11in,left=16mm,right=16mm,top=22mm,bottom=20mm,includehead,headheight=14pt,headsep=6mm,footskip=10mm</geometry>
+    </page>
+  </latex>
+</publication>

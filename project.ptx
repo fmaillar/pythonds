@@ -1,32 +1,13 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-    This file provides the overall configuration for your PreTeXt
-    project. To edit the content of your document, open `source/main.ptx`
-    (default location).
--->
+<?xml version='1.0' encoding='utf-8'?>
 <project ptx-version="2" source="pretext" publication="publication">
   <targets>
-    <!-- To build this target, run `pretext build web` -->
-    <target name="web"
-      format="html"
-      source="main.ptx"
-      publication="publication.ptx" />
-
-    <target
-      name="runestone"
-      format="html"
-      source="main.ptx"
-      publication="publication-academy.ptx" />
-
-    <target name="pdf"
-      format="pdf"
-      source="main.ptx"
-      publication="publication.ptx" />
-
-    <target name="latex"
-      format="latex"
-      source="main.ptx"
-      publication="publication.ptx" />
-
+    <target name="web" format="html" source="main.ptx" publication="publication.ptx" />
+    <target name="runestone" format="html" source="main.ptx" publication="publication-academy.ptx" />
+    <target name="pdf" format="pdf" source="main.ptx" publication="publication.ptx" />
+    <target name="latex" format="latex" source="main.ptx" publication="publication.ptx" />
+    <target name="rm2" format="pdf" source="../pretext-rm2/main.ptx" publication="publication-rm2.ptx" xsl="rm2-tables.xsl">
+      </target>
+    <target name="rm2-latex" format="latex" source="../pretext-rm2/main.ptx" publication="publication-rm2.ptx" xsl="rm2-tables.xsl">
+      </target>
   </targets>
 </project>
